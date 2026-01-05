@@ -1,23 +1,7 @@
+import streamlit as st
 import os
 import zipfile
 import gdown
-
-# Google Drive'daki dosya ID'n (Az önce not ettiğin kod)
-FILE_ID = '159Ttbvafpd5f51-BIeVD3N_WaFcgi14w'
-URL = f'https://drive.google.com/uc?id={FILE_ID}'
-OUTPUT = 'veritabani.zip'
-
-def veritabani_kontrol():
-    if not os.path.exists("veritabani"):
-        print("Veritabanı indirilüyor, lütfen bekleyin...")
-        gdown.download(URL, OUTPUT, quiet=False)
-        with zipfile.ZipFile(OUTPUT, 'r') as zip_ref:
-            zip_ref.extractall(".")
-        os.remove(OUTPUT) # Zip'i siliyoruz
-
-veritabani_kontrol()
-import streamlit as st
-import os
 import base64
 from google import genai
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
@@ -25,10 +9,35 @@ from langchain_community.vectorstores import Chroma
 from gtts import gTTS
 
 # ==========================================
-# SAYFA AYARLARI & KARANLIK TEMA CSS (Aynen Korundu)
+# VERİTABANI İNDİRME SİSTEMİ (DRIVE)
+# ==========================================
+FILE_ID = '159Ttbvafpd5f51-BIeVD3N_WaFcgi14w'
+URL = f'https://drive.google.com/uc?id={FILE_ID}'
+OUTPUT = 'veritabani.zip'
+VERITABANI_YOLU = "./veritabani"
+
+def veritabani_hazirla():
+    # Eğer veritabanı klasörü yoksa Google Drive'dan indir
+    if not os.path.exists(VERITABANI_YOLU):
+        with st.spinner("Muin hazırlanıyor, kütüphane ilk kez indiriliyor... (Bu işlem bir defaya mahsustur)"):
+            try:
+                gdown.download(URL, OUTPUT, quiet=False)
+                with zipfile.ZipFile(OUTPUT, 'r') as zip_ref:
+                    zip_ref.extractall(".")
+                if os.path.exists(OUTPUT):
+                    os.remove(OUTPUT) # Zip dosyasını temizle
+                st.success("Kütüphane başarıyla yüklendi!")
+            except Exception as e:
+                st.error(f"Veritabanı indirilirken hata oluştu: {e}")
+
+# Uygulama başlar başlamaz kontrol et
+veritabani_hazirla()
+
+# ==========================================
+# SAYFA AYARLARI & KARANLIK TEMA CSS
 # ==========================================
 st.set_page_config(page_title="MUIN", page_icon="🌙", layout="centered")
-st.title("🌙 MUIN: İslami Bilgi Asistan")
+
 st.markdown("""
     <style>
     .stApp { background-color: #000000; color: #FFFFFF; }
@@ -42,7 +51,6 @@ st.markdown("""
 # AYARLAR & MODELLER
 # ==========================================
 API_ANAHTARIM = "AIzaSyDL6_xWVgg3EYeQmHm_wWoyBHfSSFl75HI"
-VERITABANI_YOLU = "./veritabani"
 GUNCEL_MODEL = "gemini-2.0-flash"
 
 client = genai.Client(api_key=API_ANAHTARIM)
@@ -50,7 +58,9 @@ client = genai.Client(api_key=API_ANAHTARIM)
 @st.cache_resource
 def kaynaklari_yukle():
     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=API_ANAHTARIM)
-    if not os.path.exists(VERITABANI_YOLU): return None
+    # Veritabanı yolu yoksa hata verme, boş dön (yukarıdaki fonksiyonun bitmesini bekler)
+    if not os.path.exists(VERITABANI_YOLU):
+        return None
     return Chroma(persist_directory=VERITABANI_YOLU, embedding_function=embeddings)
 
 vector_db = kaynaklari_yukle()
@@ -70,7 +80,7 @@ def metni_seslendir(metin):
 # ==========================================
 # SOHBET ARAYÜZÜ & HAFIZA YÖNETİMİ
 # ==========================================
-st.title("🌙 İslami Bilge Asistan")
+st.title("🌙 MUIN: İslami Bilgi Asistanı")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -85,7 +95,6 @@ for i, message in enumerate(st.session_state.messages):
 
 # Kullanıcı girişi
 if prompt := st.chat_input("Sorunuzu buraya yazın..."):
-    # 1. Kullanıcı mesajını kaydet
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -93,20 +102,22 @@ if prompt := st.chat_input("Sorunuzu buraya yazın..."):
     with st.chat_message("assistant"):
         with st.spinner("Hikmetli cevap hazırlanıyor..."):
             try:
-                # 2. BAĞLAM OLUŞTURMA: Son 4 mesajı geçmiş olarak al
-                # Bu, kullanıcının "peki bu olay..." dediğinde neyi kastettiğini anlamasını sağlar.
+                # Diyalog Geçmişi Oluşturma
                 gecmis_diyalog = ""
-                for m in st.session_state.messages[-5:-1]: # Son soruyu dahil etme, öncekileri al
+                for m in st.session_state.messages[-5:-1]:
                     rol = "Kullanıcı" if m["role"] == "user" else "Asistan"
                     gecmis_diyalog += f"{rol}: {m['content']}\n"
 
-                # 3. Kaynak Çekme
-                docs = vector_db.similarity_search(prompt, k=5)
-                baglam = "\n\n".join([f"[{os.path.basename(d.metadata['source'])}, S:{d.metadata['page']+1}]: {d.page_content}" for d in docs])
-                kaynakca = "\n".join(set([f"- {os.path.basename(d.metadata['source']).replace('.pdf','')} (S: {d.metadata['page']+1})" for d in docs]))
+                # Kaynak Çekme (Vector DB kontrolü ile)
+                if vector_db is not None:
+                    docs = vector_db.similarity_search(prompt, k=5)
+                    baglam = "\n\n".join([f"[{os.path.basename(d.metadata['source'])}, S:{d.metadata.get('page', 0)+1}]: {d.page_content}" for d in docs])
+                    kaynakca = "\n".join(set([f"- {os.path.basename(d.metadata['source']).replace('.pdf','')}" for d in docs]))
+                else:
+                    baglam = "Kaynak veritabanına şu an ulaşılamıyor."
+                    kaynakca = "Genel İslami Bilgiler"
 
-                # 4. GÜNCELLENMİŞ HİKMETLİ PROMPT (Diyalog Geçmişi Eklendi)
-                asistan_prompt = f"""Sen derin ilmi bilgiye sahip bilge bir İslami asistansın.
+                asistan_prompt = f"""Sen derin ilmi bilgiye sahip bilge bir İslami asistansın (Adın: MUIN).
                 
                 DİYALOG GEÇMİŞİ:
                 {gecmis_diyalog}
@@ -138,5 +149,4 @@ if prompt := st.chat_input("Sorunuzu buraya yazın..."):
                 st.session_state.messages.append({"role": "assistant", "content": full_response})
 
             except Exception as e:
-                if "429" in str(e): st.error("⚠️ Kota doldu, 1 dk bekleyin.")
-                else: st.error(f"Hata: {e}")
+                st.error(f"Hata: {e}")
