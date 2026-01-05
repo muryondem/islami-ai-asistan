@@ -1,0 +1,4 @@
+veritabani/
+venv/
+*.zip
+*.sqlite3

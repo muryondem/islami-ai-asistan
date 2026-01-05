@@ -1,0 +1,7 @@
+streamlit
+google-genai
+langchain-google-genai
+langchain-community
+chromadb
+thefuzz
+gTTS
