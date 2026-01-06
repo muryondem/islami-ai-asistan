@@ -5,12 +5,12 @@ import zipfile
 import gdown
 import base64
 import json
+import math
+import time
 from google import genai
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from gtts import gTTS
-from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
 
 # ==========================================
 # AYARLAR & DOSYA YOLLARI
@@ -26,7 +26,7 @@ GUNCEL_MODEL = "gemini-2.0-flash"
 client = genai.Client(api_key=API_ANAHTARIM)
 
 # ==========================================
-# VERİTABANI VE POPÜLER SORU SİSTEMİ
+# FONKSİYONLAR & BENZERLİK HESABI
 # ==========================================
 def veritabanini_hazirla():
     if not os.path.exists(VERITABANI_YOLU):
@@ -43,6 +43,15 @@ def veritabanini_hazirla():
 
 veritabanini_hazirla()
 
+def cosine_similarity_manuel(v1, v2):
+    sumxx, sumxy, sumyy = 0, 0, 0
+    for i in range(len(v1)):
+        x = v1[i]; y = v2[i]
+        sumxx += x*x
+        sumyy += y*y
+        sumxy += x*y
+    return sumxy / math.sqrt(sumxx*sumyy)
+
 def populer_soru_guncelle(yeni_soru, embeddings_model):
     if not yeni_soru or len(yeni_soru) < 10: return
     
@@ -52,24 +61,32 @@ def populer_soru_guncelle(yeni_soru, embeddings_model):
     else:
         soru_listesi = []
 
-    yeni_vektor = embeddings_model.embed_query(yeni_soru)
-    bulundu = False
+    try:
+        # Kotayı korumak için kısa bir mola
+        time.sleep(1) 
+        yeni_vektor = embeddings_model.embed_query(yeni_soru)
+        bulundu = False
 
-    for soru_obj in soru_listesi:
-        mevcut_vektor = embeddings_model.embed_query(soru_obj["soru"])
-        benzerlik = cosine_similarity([yeni_vektor], [mevcut_vektor])[0][0]
+        for soru_obj in soru_listesi:
+            # Her karşılaştırma öncesi Google kotası için mola
+            time.sleep(0.5)
+            mevcut_vektor = embeddings_model.embed_query(soru_obj["soru"])
+            benzerlik = cosine_similarity_manuel(yeni_vektor, mevcut_vektor)
+            
+            if benzerlik > 0.88:
+                soru_obj["puan"] += 1
+                bulundu = True
+                break
         
-        if benzerlik > 0.88:
-            soru_obj["puan"] += 1
-            bulundu = True
-            break
-    
-    if not bulundu:
-        soru_listesi.append({"soru": yeni_soru, "puan": 1})
-    
-    soru_listesi = sorted(soru_listesi, key=lambda x: x["puan"], reverse=True)[:20]
-    with open(POPULER_SORULAR_DOSYASI, "w", encoding="utf-8") as f:
-        json.dump(soru_listesi, f, ensure_ascii=False, indent=4)
+        if not bulundu:
+            soru_listesi.append({"soru": yeni_soru, "puan": 1})
+        
+        soru_listesi = sorted(soru_listesi, key=lambda x: x["puan"], reverse=True)[:20]
+        with open(POPULER_SORULAR_DOSYASI, "w", encoding="utf-8") as f:
+            json.dump(soru_listesi, f, ensure_ascii=False, indent=4)
+    except Exception:
+        # Kota hatası (429) gelirse sistemi kitleme, sadece güncelleme yapma
+        pass
 
 def populer_sorulari_getir():
     if os.path.exists(POPULER_SORULAR_DOSYASI):
@@ -77,9 +94,6 @@ def populer_sorulari_getir():
             return json.load(f)
     return []
 
-# ==========================================
-# KAYNAK YÜKLEME VE SESLENDİRME
-# ==========================================
 @st.cache_resource
 def kaynaklari_yukle():
     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=API_ANAHTARIM)
@@ -94,14 +108,12 @@ def metni_seslendir(metin):
         tts = gTTS(text=temiz_metin, lang='tr', slow=False)
         tts.save("temp_voice.mp3")
         with open("temp_voice.mp3", "rb") as f:
-            data = f.read()
-            b64 = base64.b64encode(data).decode()
+            b64 = base64.b64encode(f.read()).decode()
             return f'<audio controls autoplay><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
-    except Exception as e:
-        return f"Seslendirme hatası: {e}"
+    except: return "Seslendirme şu an yapılamıyor."
 
 # ==========================================
-# ARAYÜZ TASARIMI (CSS)
+# TASARIM & CSS
 # ==========================================
 st.set_page_config(page_title="MUIN", page_icon="🌙", layout="centered")
 
@@ -112,25 +124,22 @@ st.markdown("""
     p, span, label, .stMarkdown, h1, h2, h3, h4 { color: #FFFFFF !important; }
     .stButton>button { border-radius: 20px; background-color: #1A1A1A; border: 1px solid #333; color: white !important; font-size: 14px; margin-bottom: 5px; }
     .stButton>button:hover { border-color: #🌙; background-color: #333; }
-    /* Expander stilini karanlık temaya uydurma */
     .streamlit-expanderHeader { background-color: #000000 !important; color: #FFFFFF !important; border: 1px solid #333 !important; border-radius: 10px !important; }
     audio { filter: invert(100%); }
     </style>
     """, unsafe_allow_html=True)
 
 # ==========================================
-# ANA EKRAN VE SOHBET AKIŞI
+# ANA EKRAN
 # ==========================================
 st.title("🌙 MUIN: İslami Bilgi Asistanı")
 
-# --- POPÜLER SORULAR BÖLÜMÜ (Açılır-Kapanır Kontrollü) ---
 populer_listesi = populer_sorulari_getir()
 
 if "clicked_question" not in st.session_state:
     st.session_state.clicked_question = None
 
 if populer_listesi:
-    # İlk 4 soruyu her zaman göster (Vitrin)
     st.markdown("#### 🌟 Popüler Sorular")
     cols_vitrin = st.columns(2)
     for i, kalem in enumerate(populer_listesi[:4]):
@@ -138,7 +147,6 @@ if populer_listesi:
             if st.button(f"🔍 {kalem['soru']}", key=f"vitrin_{i}", use_container_width=True):
                 st.session_state.clicked_question = kalem['soru']
     
-    # Geri kalan soruları açılır panelde sakla
     if len(populer_listesi) > 4:
         with st.expander("Daha Fazla Popüler Soru Gör..."):
             cols_more = st.columns(2)
@@ -147,14 +155,14 @@ if populer_listesi:
                     if st.button(f"🔍 {kalem['soru']}", key=f"more_{i}", use_container_width=True):
                         st.session_state.clicked_question = kalem['soru']
 else:
-    st.info("Henüz popüler soru oluşmadı. İlk soruyu sorarak başlatın!")
+    st.info("Henüz popüler soru oluşmadı.")
 
 st.divider()
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Mesaj geçmişini göster
+# Mesaj geçmişi
 for i, message in enumerate(st.session_state.messages):
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
@@ -162,20 +170,17 @@ for i, message in enumerate(st.session_state.messages):
             if st.button(f"🔊 Dinle", key=f"btn_{i}"):
                 st.markdown(metni_seslendir(message["content"]), unsafe_allow_html=True)
 
-# Kullanıcı Girişi
+# Girdi Yönetimi
 user_input = st.chat_input("Sorunuzu buraya yazın...")
-
-if st.session_state.clicked_question:
-    prompt = st.session_state.clicked_question
-    st.session_state.clicked_question = None
-else:
-    prompt = user_input
+prompt = st.session_state.clicked_question if st.session_state.clicked_question else user_input
+st.session_state.clicked_question = None
 
 if prompt:
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
+    # Arka planda popülerliği güncelle (Hata korumalı)
     populer_soru_guncelle(prompt, embeddings_model)
 
     with st.chat_message("assistant"):
@@ -191,25 +196,19 @@ if prompt:
                     baglam = "\n\n".join([f"[{os.path.basename(d.metadata['source'])}, S:{d.metadata.get('page', 0)+1}]: {d.page_content}" for d in docs])
                     kaynakca = "\n".join(set([f"- {os.path.basename(d.metadata['source']).replace('.pdf','')}" for d in docs]))
                 else:
-                    baglam = "Kaynak veritabanına şu an ulaşılamıyor."
-                    kaynakca = "Genel İslami Bilgiler"
+                    baglam = "Kaynaklara şu an ulaşılamıyor."; kaynakca = "Genel Bilgiler"
 
-                asistan_prompt = f"""Sen derin ilmi bilgiye sahip bilge bir İslami asistansın (Adın: MUIN).
-                DİYALOG GEÇMİŞİ: {gecmis_diyalog}
-                YENİ SORU: {prompt}
-                KAYNAK VERİLER: {baglam}
-                TALİMATLAR: Cevabında asla yıldız (*) kullanma. Kaynaklara atıf yap.
-                YARARLANILAN KAYNAKLAR: {kaynakca}"""
-
+                asistan_prompt = f"Adın MUIN. Bilge asistansın.\nGeçmiş: {gecmis_diyalog}\nSoru: {prompt}\nKaynaklar: {baglam}\nTalimat: Yıldız kullanma. Kaynak belirt.\nKaynaklar: {kaynakca}"
+                
                 response = client.models.generate_content(model=GUNCEL_MODEL, contents=asistan_prompt)
                 full_response = response.text
                 st.markdown(full_response)
                 
-                if st.button("🔊 Bu Cevabı Sesli Dinle", key="current_btn"):
+                if st.button("🔊 Dinle", key="current_btn"):
                     st.markdown(metni_seslendir(full_response), unsafe_allow_html=True)
                 
                 st.session_state.messages.append({"role": "assistant", "content": full_response})
                 st.rerun()
 
             except Exception as e:
-                st.error(f"Hata: {e}")
+                st.error(f"Hata oluştu: {e}")
