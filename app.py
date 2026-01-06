@@ -6,87 +6,52 @@ import gdown
 import base64
 import json
 import math
-import time
 from google import genai
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from gtts import gTTS
 
 # ==========================================
-# AYARLAR & DOSYA YOLLARI
+# AYARLAR & API
 # ==========================================
-FILE_ID = '159Ttbvafpd5f51-BIeVD3N_WaFcgi14w'
-URL = f'https://drive.google.com/uc?id={FILE_ID}'
-OUTPUT = 'veritabani.zip'
+API_ANAHTARIM = st.secrets["GEMINI_API_KEY"]
 VERITABANI_YOLU = "./veritabani"
 POPULER_SORULAR_DOSYASI = "populer_sorular.json"
-API_ANAHTARIM = st.secrets["GEMINI_API_KEY"]
 GUNCEL_MODEL = "gemini-2.0-flash"
-
 client = genai.Client(api_key=API_ANAHTARIM)
 
 # ==========================================
-# FONKSİYONLAR & BENZERLİK HESABI
+# FONKSİYONLAR (Aynı Mantık, Zeki Hafıza Dahil)
 # ==========================================
-def veritabanini_hazirla():
-    if not os.path.exists(VERITABANI_YOLU):
-        with st.spinner("Muin hazırlanıyor..."):
-            try:
-                gdown.download(URL, OUTPUT, quiet=False)
-                with zipfile.ZipFile(OUTPUT, 'r') as zip_ref:
-                    zip_ref.extractall(".")
-                if os.path.exists(OUTPUT):
-                    os.remove(OUTPUT)
-                st.success("Kütüphane başarıyla yüklendi!")
-            except Exception as e:
-                st.error(f"Veritabanı hatası: {e}")
-
-veritabanini_hazirla()
-
 def cosine_similarity_manuel(v1, v2):
     sumxx, sumxy, sumyy = 0, 0, 0
     for i in range(len(v1)):
-        x = v1[i]; y = v2[i]
-        sumxx += x*x
-        sumyy += y*y
-        sumxy += x*y
+        x, y = v1[i], v2[i]
+        sumxx += x*x; sumyy += y*y; sumxy += x*y
     return sumxy / math.sqrt(sumxx*sumyy)
 
 def populer_soru_guncelle(yeni_soru, embeddings_model):
     if not yeni_soru or len(yeni_soru) < 10: return
-    
     if os.path.exists(POPULER_SORULAR_DOSYASI):
         with open(POPULER_SORULAR_DOSYASI, "r", encoding="utf-8") as f:
             soru_listesi = json.load(f)
-    else:
-        soru_listesi = []
+    else: soru_listesi = []
 
     try:
-        # Kotayı korumak için kısa bir mola
-        time.sleep(1) 
         yeni_vektor = embeddings_model.embed_query(yeni_soru)
         bulundu = False
-
         for soru_obj in soru_listesi:
-            # Her karşılaştırma öncesi Google kotası için mola
-            time.sleep(0.5)
-            mevcut_vektor = embeddings_model.embed_query(soru_obj["soru"])
-            benzerlik = cosine_similarity_manuel(yeni_vektor, mevcut_vektor)
-            
-            if benzerlik > 0.88:
-                soru_obj["puan"] += 1
-                bulundu = True
-                break
-        
+            if "vektor" in soru_obj:
+                benzerlik = cosine_similarity_manuel(yeni_vektor, soru_obj["vektor"])
+                if benzerlik > 0.88:
+                    soru_obj["puan"] += 1
+                    bulundu = True; break
         if not bulundu:
-            soru_listesi.append({"soru": yeni_soru, "puan": 1})
-        
+            soru_listesi.append({"soru": yeni_soru, "puan": 1, "vektor": yeni_vektor})
         soru_listesi = sorted(soru_listesi, key=lambda x: x["puan"], reverse=True)[:20]
         with open(POPULER_SORULAR_DOSYASI, "w", encoding="utf-8") as f:
-            json.dump(soru_listesi, f, ensure_ascii=False, indent=4)
-    except Exception:
-        # Kota hatası (429) gelirse sistemi kitleme, sadece güncelleme yapma
-        pass
+            json.dump(soru_listesi, f, ensure_ascii=False)
+    except: pass
 
 def populer_sorulari_getir():
     if os.path.exists(POPULER_SORULAR_DOSYASI):
@@ -97,118 +62,115 @@ def populer_sorulari_getir():
 @st.cache_resource
 def kaynaklari_yukle():
     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=API_ANAHTARIM)
-    if not os.path.exists(VERITABANI_YOLU): return None, embeddings
-    return Chroma(persist_directory=VERITABANI_YOLU, embedding_function=embeddings), embeddings
+    v_db = Chroma(persist_directory=VERITABANI_YOLU, embedding_function=embeddings) if os.path.exists(VERITABANI_YOLU) else None
+    return v_db, embeddings
 
 vector_db, embeddings_model = kaynaklari_yukle()
 
 def metni_seslendir(metin):
     try:
-        temiz_metin = metin.replace("*", "")
-        tts = gTTS(text=temiz_metin, lang='tr', slow=False)
+        tts = gTTS(text=metin.replace("*", ""), lang='tr', slow=False)
         tts.save("temp_voice.mp3")
         with open("temp_voice.mp3", "rb") as f:
             b64 = base64.b64encode(f.read()).decode()
             return f'<audio controls autoplay><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
-    except: return "Seslendirme şu an yapılamıyor."
+    except: return ""
 
 # ==========================================
-# TASARIM & CSS
+# TASARIM & CSS (Sabitleme Efekti)
 # ==========================================
 st.set_page_config(page_title="MUIN", page_icon="🌙", layout="centered")
 
 st.markdown("""
     <style>
     .stApp { background-color: #000000; color: #FFFFFF; }
-    .stChatMessage { border-radius: 15px; padding: 15px; margin-bottom: 10px; background-color: #1A1A1A; }
-    p, span, label, .stMarkdown, h1, h2, h3, h4 { color: #FFFFFF !important; }
-    .stButton>button { border-radius: 20px; background-color: #1A1A1A; border: 1px solid #333; color: white !important; font-size: 14px; margin-bottom: 5px; }
-    .stButton>button:hover { border-color: #🌙; background-color: #333; }
-    .streamlit-expanderHeader { background-color: #000000 !important; color: #FFFFFF !important; border: 1px solid #333 !important; border-radius: 10px !important; }
-    audio { filter: invert(100%); }
+    
+    /* Üst Bölgeyi Sabitleme */
+    [data-testid="stVerticalBlock"] > div:first-child {
+        position: sticky;
+        top: 0;
+        z-index: 999;
+        background-color: #000000;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #333;
+    }
+    
+    .stChatMessage { border-radius: 15px; background-color: #1A1A1A; margin-bottom: 10px; }
+    .stButton>button { border-radius: 20px; background-color: #1A1A1A; border: 1px solid #333; color: white !important; }
+    .streamlit-expanderHeader { background-color: #000 !important; border: 1px solid #333 !important; }
+    audio { filter: invert(100%); width: 100%; }
     </style>
     """, unsafe_allow_html=True)
 
 # ==========================================
-# ANA EKRAN
+# 1. SABİT ÜST BÖLGE (Popüler Sorular)
 # ==========================================
-st.title("🌙 MUIN: İslami Bilgi Asistanı")
-
-populer_listesi = populer_sorulari_getir()
-
-if "clicked_question" not in st.session_state:
-    st.session_state.clicked_question = None
-
-if populer_listesi:
-    st.markdown("#### 🌟 Popüler Sorular")
-    cols_vitrin = st.columns(2)
-    for i, kalem in enumerate(populer_listesi[:4]):
-        with cols_vitrin[i % 2]:
-            if st.button(f"🔍 {kalem['soru']}", key=f"vitrin_{i}", use_container_width=True):
-                st.session_state.clicked_question = kalem['soru']
+header_container = st.container()
+with header_container:
+    st.title("🌙 MUIN")
+    populer_listesi = populer_sorulari_getir()
     
-    if len(populer_listesi) > 4:
-        with st.expander("Daha Fazla Popüler Soru Gör..."):
-            cols_more = st.columns(2)
-            for i, kalem in enumerate(populer_listesi[4:]):
-                with cols_more[i % 2]:
-                    if st.button(f"🔍 {kalem['soru']}", key=f"more_{i}", use_container_width=True):
-                        st.session_state.clicked_question = kalem['soru']
-else:
-    st.info("Henüz popüler soru oluşmadı.")
+    if "clicked_q" not in st.session_state: st.session_state.clicked_q = None
 
-st.divider()
+    if populer_listesi:
+        st.markdown("##### 🌟 Popüler Sorular")
+        c1, c2 = st.columns(2)
+        for i, k in enumerate(populer_listesi[:4]):
+            with (c1 if i%2==0 else c2):
+                if st.button(f"🔍 {k['soru']}", key=f"v_{i}", use_container_width=True):
+                    st.session_state.clicked_q = k['soru']
+        
+        if len(populer_listesi) > 4:
+            with st.expander("Tüm Popüler Soruları Gör..."):
+                c3, c4 = st.columns(2)
+                for i, k in enumerate(populer_listesi[4:]):
+                    with (c3 if i%2==0 else c4):
+                        if st.button(f"🔍 {k['soru']}", key=f"m_{i}", use_container_width=True):
+                            st.session_state.clicked_q = k['soru']
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+# ==========================================
+# 2. KAYDIRILABİLİR ALT BÖLGE (Chat)
+# ==========================================
+if "messages" not in st.session_state: st.session_state.messages = []
 
-# Mesaj geçmişi
-for i, message in enumerate(st.session_state.messages):
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-        if message["role"] == "assistant":
-            if st.button(f"🔊 Dinle", key=f"btn_{i}"):
-                st.markdown(metni_seslendir(message["content"]), unsafe_allow_html=True)
+# Mesajları göster
+for i, m in enumerate(st.session_state.messages):
+    with st.chat_message(m["role"]):
+        st.markdown(m["content"])
+        if m["role"] == "assistant":
+            if st.button("🔊 Dinle", key=f"s_{i}"):
+                st.markdown(metni_seslendir(m["content"]), unsafe_allow_html=True)
 
-# Girdi Yönetimi
-user_input = st.chat_input("Sorunuzu buraya yazın...")
-prompt = st.session_state.clicked_question if st.session_state.clicked_question else user_input
-st.session_state.clicked_question = None
+# Girdi ve İşlem
+u_input = st.chat_input("Sorunuzu buraya yazın...")
+prompt = st.session_state.clicked_q if st.session_state.clicked_q else u_input
+st.session_state.clicked_q = None
 
 if prompt:
     st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+    st.rerun() # Girdiyi hemen göstermek için
 
-    # Arka planda popülerliği güncelle (Hata korumalı)
-    populer_soru_guncelle(prompt, embeddings_model)
-
+# En son mesaj asistan cevabı bekliyorsa tetikle
+if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
+    current_prompt = st.session_state.messages[-1]["content"]
+    populer_soru_guncelle(current_prompt, embeddings_model)
+    
     with st.chat_message("assistant"):
-        with st.spinner("Hikmetli cevap hazırlanıyor..."):
+        with st.spinner("İlmi kaynaklar taranıyor..."):
             try:
-                gecmis_diyalog = ""
-                for m in st.session_state.messages[-5:-1]:
-                    rol = "Kullanıcı" if m["role"] == "user" else "Asistan"
-                    gecmis_diyalog += f"{rol}: {m['content']}\n"
+                if vector_db:
+                    docs = vector_db.similarity_search(current_prompt, k=4)
+                    baglam = "\n\n".join([f"[{os.path.basename(d.metadata['source'])}]: {d.page_content}" for d in docs])
+                else: baglam = "Veritabanı bağlantısı yok."
 
-                if vector_db is not None:
-                    docs = vector_db.similarity_search(prompt, k=5)
-                    baglam = "\n\n".join([f"[{os.path.basename(d.metadata['source'])}, S:{d.metadata.get('page', 0)+1}]: {d.page_content}" for d in docs])
-                    kaynakca = "\n".join(set([f"- {os.path.basename(d.metadata['source']).replace('.pdf','')}" for d in docs]))
-                else:
-                    baglam = "Kaynaklara şu an ulaşılamıyor."; kaynakca = "Genel Bilgiler"
-
-                asistan_prompt = f"Adın MUIN. Bilge asistansın.\nGeçmiş: {gecmis_diyalog}\nSoru: {prompt}\nKaynaklar: {baglam}\nTalimat: Yıldız kullanma. Kaynak belirt.\nKaynaklar: {kaynakca}"
+                res = client.models.generate_content(
+                    model=GUNCEL_MODEL, 
+                    contents=f"Sen bilge MUIN'sin. Kaynaklar: {baglam}\nSoru: {current_prompt}\nCevabı kaynaklara dayalı ver. Yıldız (*) kullanma."
+                )
                 
-                response = client.models.generate_content(model=GUNCEL_MODEL, contents=asistan_prompt)
-                full_response = response.text
-                st.markdown(full_response)
-                
-                if st.button("🔊 Dinle", key="current_btn"):
-                    st.markdown(metni_seslendir(full_response), unsafe_allow_html=True)
-                
-                st.session_state.messages.append({"role": "assistant", "content": full_response})
+                full_res = res.text
+                st.markdown(full_res)
+                st.session_state.messages.append({"role": "assistant", "content": full_res})
                 st.rerun()
-
             except Exception as e:
-                st.error(f"Hata oluştu: {e}")
+                st.error(f"Hata: {e}")
