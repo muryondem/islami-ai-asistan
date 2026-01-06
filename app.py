@@ -50,7 +50,7 @@ st.markdown("""
 # ==========================================
 # AYARLAR & MODELLER
 # ==========================================
-API_ANAHTARIM = "AIzaSyDL6_xWVgg3EYeQmHm_wWoyBHfSSFl75HI"
+API_ANAHTARIM = st.secrets["GEMINI_API_KEY"]
 GUNCEL_MODEL = "gemini-2.0-flash"
 
 client = genai.Client(api_key=API_ANAHTARIM)
