@@ -12,7 +12,7 @@ from langchain_community.vectorstores import Chroma
 from gtts import gTTS
 
 # ==========================================
-# AYARLAR
+# AYARLAR & API
 # ==========================================
 API_ANAHTARIM = st.secrets["GEMINI_API_KEY"]
 VERITABANI_YOLU = "./veritabani"
@@ -21,62 +21,38 @@ GUNCEL_MODEL = "gemini-2.0-flash"
 client = genai.Client(api_key=API_ANAHTARIM)
 
 # ==========================================
-# TASARIM & KATMANLI CSS (KESİN ÇÖZÜM)
+# FONKSİYONLAR (Aynı Mantık, Zeki Hafıza Dahil)
 # ==========================================
-st.set_page_config(page_title="MUIN", page_icon="🌙", layout="centered")
+def cosine_similarity_manuel(v1, v2):
+    sumxx, sumxy, sumyy = 0, 0, 0
+    for i in range(len(v1)):
+        x, y = v1[i], v2[i]
+        sumxx += x*x; sumyy += y*y; sumxy += x*y
+    return sumxy / math.sqrt(sumxx*sumyy)
 
-st.markdown("""
-    <style>
-    /* Ana Arka Plan */
-    .stApp { background-color: #000000; }
+def populer_soru_guncelle(yeni_soru, embeddings_model):
+    if not yeni_soru or len(yeni_soru) < 10: return
+    if os.path.exists(POPULER_SORULAR_DOSYASI):
+        with open(POPULER_SORULAR_DOSYASI, "r", encoding="utf-8") as f:
+            soru_listesi = json.load(f)
+    else: soru_listesi = []
 
-    /* 1. ÜST SABİT BÖLGE (Header) */
-    .fixed-header {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        background-color: #000000;
-        z-index: 1000;
-        padding: 10px 20px;
-        border-bottom: 2px solid #333;
-    }
+    try:
+        yeni_vektor = embeddings_model.embed_query(yeni_soru)
+        bulundu = False
+        for soru_obj in soru_listesi:
+            if "vektor" in soru_obj:
+                benzerlik = cosine_similarity_manuel(yeni_vektor, soru_obj["vektor"])
+                if benzerlik > 0.88:
+                    soru_obj["puan"] += 1
+                    bulundu = True; break
+        if not bulundu:
+            soru_listesi.append({"soru": yeni_soru, "puan": 1, "vektor": yeni_vektor})
+        soru_listesi = sorted(soru_listesi, key=lambda x: x["puan"], reverse=True)[:20]
+        with open(POPULER_SORULAR_DOSYASI, "w", encoding="utf-8") as f:
+            json.dump(soru_listesi, f, ensure_ascii=False)
+    except: pass
 
-    /* 2. CHAT ALANI İÇİN BOŞLUK (Üstten ve Alttan) */
-    .main-content {
-        margin-top: 240px; /* Popüler soruların yüksekliğine göre ayarlandı */
-        margin-bottom: 100px;
-    }
-
-    /* Chat Balonları Tasarımı */
-    .stChatMessage { border-radius: 15px; background-color: #1A1A1A !important; margin-bottom: 15px; }
-    
-    /* Popüler Soru Butonları */
-    div.stButton > button {
-        width: 100%;
-        border-radius: 15px;
-        background-color: #262626;
-        color: white !important;
-        border: 1px solid #444;
-        font-size: 13px;
-        padding: 5px;
-    }
-
-    /* Soru Giriş Kutusunun Yerleşimi (En Üstte Kalması İçin) */
-    .stChatInput {
-        position: fixed;
-        bottom: 20px;
-        z-index: 1001;
-    }
-    
-    /* Ses Dosyası Görünümü */
-    audio { filter: invert(100%); width: 100%; height: 35px; }
-    </style>
-    """, unsafe_allow_html=True)
-
-# ==========================================
-# FONKSİYONLAR
-# ==========================================
 def populer_sorulari_getir():
     if os.path.exists(POPULER_SORULAR_DOSYASI):
         with open(POPULER_SORULAR_DOSYASI, "r", encoding="utf-8") as f:
@@ -91,77 +67,110 @@ def kaynaklari_yukle():
 
 vector_db, embeddings_model = kaynaklari_yukle()
 
+def metni_seslendir(metin):
+    try:
+        tts = gTTS(text=metin.replace("*", ""), lang='tr', slow=False)
+        tts.save("temp_voice.mp3")
+        with open("temp_voice.mp3", "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
+            return f'<audio controls autoplay><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
+    except: return ""
+
 # ==========================================
-# 1. KATMAN: SABİT POPÜLER SORULAR (ÜST)
+# TASARIM & CSS (Sabitleme Efekti)
 # ==========================================
-with st.container():
-    # HTML ile sabit başlık alanı oluşturuyoruz
-    st.markdown('<div class="fixed-header">', unsafe_allow_html=True)
-    st.title("🌙 MUIN")
+st.set_page_config(page_title="MUIN", page_icon="🌙", layout="centered")
+
+st.markdown("""
+    <style>
+    .stApp { background-color: #000000; color: #FFFFFF; }
     
-    populerler = populer_sorulari_getir()
+    /* Üst Bölgeyi Sabitleme */
+    [data-testid="stVerticalBlock"] > div:first-child {
+        position: sticky;
+        top: 0;
+        z-index: 999;
+        background-color: #000000;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #333;
+    }
+    
+    .stChatMessage { border-radius: 15px; background-color: #1A1A1A; margin-bottom: 10px; }
+    .stButton>button { border-radius: 20px; background-color: #1A1A1A; border: 1px solid #333; color: white !important; }
+    .streamlit-expanderHeader { background-color: #000 !important; border: 1px solid #333 !important; }
+    audio { filter: invert(100%); width: 100%; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# ==========================================
+# 1. SABİT ÜST BÖLGE (Popüler Sorular)
+# ==========================================
+header_container = st.container()
+with header_container:
+    st.title("🌙 MUIN")
+    populer_listesi = populer_sorulari_getir()
+    
     if "clicked_q" not in st.session_state: st.session_state.clicked_q = None
 
-    if populerler:
+    if populer_listesi:
         st.markdown("##### 🌟 Popüler Sorular")
         c1, c2 = st.columns(2)
-        for i, k in enumerate(populerler[:4]):
+        for i, k in enumerate(populer_listesi[:4]):
             with (c1 if i%2==0 else c2):
-                if st.button(f"🔍 {k['soru']}", key=f"v_{i}"):
+                if st.button(f"🔍 {k['soru']}", key=f"v_{i}", use_container_width=True):
                     st.session_state.clicked_q = k['soru']
         
-        if len(populerler) > 4:
-            with st.expander("Tümünü Gör"):
+        if len(populer_listesi) > 4:
+            with st.expander("Tüm Popüler Soruları Gör..."):
                 c3, c4 = st.columns(2)
-                for i, k in enumerate(populerler[4:]):
+                for i, k in enumerate(populer_listesi[4:]):
                     with (c3 if i%2==0 else c4):
-                        if st.button(f"🔍 {k['soru']}", key=f"m_{i}"):
+                        if st.button(f"🔍 {k['soru']}", key=f"m_{i}", use_container_width=True):
                             st.session_state.clicked_q = k['soru']
-    st.markdown('</div>', unsafe_allow_html=True)
 
 # ==========================================
-# 2. KATMAN: CHAT AKIŞI (ORTA)
+# 2. KAYDIRILABİLİR ALT BÖLGE (Chat)
 # ==========================================
-# Boşluk bırakmak için görünmez bir alan
-st.markdown('<div class="main-content">', unsafe_allow_html=True)
-
 if "messages" not in st.session_state: st.session_state.messages = []
 
+# Mesajları göster
 for i, m in enumerate(st.session_state.messages):
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
         if m["role"] == "assistant":
             if st.button("🔊 Dinle", key=f"s_{i}"):
-                # Basit seslendirme fonksiyonu (Hız için kısa tutuldu)
-                tts = gTTS(text=m["content"].replace("*",""), lang='tr')
-                tts.save("voice.mp3")
-                with open("voice.mp3", "rb") as f:
-                    b64 = base64.b64encode(f.read()).decode()
-                    st.markdown(f'<audio controls autoplay><source src="data:audio/mp3;base64,{b64}"></audio>', unsafe_allow_html=True)
+                st.markdown(metni_seslendir(m["content"]), unsafe_allow_html=True)
 
-st.markdown('</div>', unsafe_allow_html=True)
-
-# ==========================================
-# 3. KATMAN: GİRDİ YÖNETİMİ (ALT)
-# ==========================================
+# Girdi ve İşlem
 u_input = st.chat_input("Sorunuzu buraya yazın...")
 prompt = st.session_state.clicked_q if st.session_state.clicked_q else u_input
 st.session_state.clicked_q = None
 
 if prompt:
     st.session_state.messages.append({"role": "user", "content": prompt})
-    # Burada asistan cevabını üretme ve RAG süreçleri (Önceki kodla aynı)
+    st.rerun() # Girdiyi hemen göstermek için
+
+# En son mesaj asistan cevabı bekliyorsa tetikle
+if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
+    current_prompt = st.session_state.messages[-1]["content"]
+    populer_soru_guncelle(current_prompt, embeddings_model)
+    
     with st.chat_message("assistant"):
-        with st.spinner("İlmi cevap hazırlanıyor..."):
+        with st.spinner("İlmi kaynaklar taranıyor..."):
             try:
-                docs = vector_db.similarity_search(prompt, k=4) if vector_db else []
-                baglam = "\n".join([d.page_content for d in docs])
+                if vector_db:
+                    docs = vector_db.similarity_search(current_prompt, k=4)
+                    baglam = "\n\n".join([f"[{os.path.basename(d.metadata['source'])}]: {d.page_content}" for d in docs])
+                else: baglam = "Veritabanı bağlantısı yok."
+
                 res = client.models.generate_content(
                     model=GUNCEL_MODEL, 
-                    contents=f"Asistan MUIN. Kaynak: {baglam}\nSoru: {prompt}"
+                    contents=f"Sen bilge MUIN'sin. Kaynaklar: {baglam}\nSoru: {current_prompt}\nCevabı kaynaklara dayalı ver. Yıldız (*) kullanma."
                 )
-                st.markdown(res.text)
-                st.session_state.messages.append({"role": "assistant", "content": res.text})
+                
+                full_res = res.text
+                st.markdown(full_res)
+                st.session_state.messages.append({"role": "assistant", "content": full_res})
                 st.rerun()
             except Exception as e:
                 st.error(f"Hata: {e}")
