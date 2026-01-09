@@ -32,31 +32,23 @@ ZIP_ADI = "veritabani.zip"
 # DRIVE'DAN VERİTABANI ÇEKME (OTOMATİK)
 # ==========================================
 def veritabani_hazirla():
-    # Eğer klasör yoksa veya içi boşsa indir
     if not os.path.exists(VERITABANI_YOLU) or not os.listdir(VERITABANI_YOLU):
         st.info("Kütüphane (Veritabanı) Drive'dan hazırlanıyor, lütfen bekleyin...")
         url = f'https://drive.google.com/uc?id={DRIVE_DOSYA_ID}'
-        
         try:
-            # Drive'dan indir
             gdown.download(url, ZIP_ADI, quiet=False)
-            
-            # Zip'ten çıkar
             with zipfile.ZipFile(ZIP_ADI, 'r') as zip_ref:
                 zip_ref.extractall(".")
-            
-            # İndirilen zip dosyasını temizle
             if os.path.exists(ZIP_ADI):
                 os.remove(ZIP_ADI)
             st.success("Veritabanı başarıyla kuruldu.")
         except Exception as e:
             st.error(f"Veritabanı indirilirken hata oluştu: {e}")
 
-# Fonksiyonu değişken tanımlarından sonra çalıştırıyoruz
 veritabani_hazirla()
 
 # ==========================================
-# FONKSİYONLAR (HAFIZA, KAYIT VE ZEKA)
+# FONKSİYONLAR
 # ==========================================
 def cosine_similarity_manuel(v1, v2):
     sumxx, sumxy, sumyy = 0, 0, 0
@@ -178,45 +170,47 @@ prompt = st.session_state.clicked_q if st.session_state.clicked_q else u_input
 st.session_state.clicked_q = None
 
 if prompt:
+    # Kullanıcı mesajını anında ekle
     st.session_state.messages.append({"role": "user", "content": prompt})
-    st.rerun()
-
-if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
-    current_prompt = st.session_state.messages[-1]["content"]
-    populer_soru_guncelle(current_prompt, embeddings_model)
+    populer_soru_guncelle(prompt, embeddings_model)
     
+    # MUIN hemen cevap alanını açsın (Donma hissini engeller)
     with chat_area:
         with st.chat_message("assistant"):
-            with st.spinner("MUIN mütalaa ediyor..."):
-                try:
-                    # HAFIZA: Senin istediğin gibi son 12 mesaj
-                    gecmis = st.session_state.messages[-12:-1]
-                    gecmis_text = "\n".join([f"{m['role']}: {m['content']}" for m in gecmis])
+            message_placeholder = st.empty()
+            message_placeholder.markdown("🔍 *MUIN mütalaa ediyor...*")
+            
+            try:
+                # Hafıza hazırlığı
+                gecmis = st.session_state.messages[-12:-1]
+                gecmis_text = "\n".join([f"{m['role']}: {m['content']}" for m in gecmis])
 
-                    if vector_db:
-                        docs = vector_db.similarity_search(current_prompt, k=6)
-                        baglam = "\n\n".join([f"📚 Kaynak: {os.path.basename(d.metadata['source'])}\n{d.page_content}" for d in docs])
-                    else: baglam = "Belge bulunamadı."
+                if vector_db:
+                    docs = vector_db.similarity_search(prompt, k=6)
+                    baglam = "\n\n".join([f"📚 Kaynak: {os.path.basename(d.metadata['source'])}\n{d.page_content}" for d in docs])
+                else: baglam = "Belge bulunamadı."
 
-                    # SENİN MEMNUN OLDUĞUN TAM SYSTEM INSTRUCTIONS
-                    system_instructions = (
-                        "Sen bilge, nazik ve öğretici bir muallim olan MUIN'sin. "
-                        "Cevaplarına başlarken her seferinde farklı olacak şekilde; 'Selamünaleyküm kıymetli kardeşim', 'Aziz dostum merhaba' gibi samimi karşılamalar kullan. "
-                        "Soru hangi dildeyse o dilde cevap ver. "
-                        "ÖNEMLİ: Aşağıdaki GEÇMİŞ bölümündeki diyaloğu çok dikkatli incele. Eğer kullanıcı 'peki ya şu?', 'o ne demek?' gibi takip soruları soruyorsa, "
-                        "bir önceki cevabına ve kullanıcının niyetine sadık kalarak konuyu devam ettir. "
-                        "Öğretici, şefkatli ve derinlemesine bilgi veren bir üslup kullan. "
-                        "\n\nKAYNAK KURALI: Sadece ve sadece belgelerde bilgi varsa (📚 Kaynak: Dosya Adı) şeklinde atıf yap. "
-                        "Eğer bilgi belgelerde yoksa kendi bilgini hikmetle anlat. "
-                        "\n\nYıldız (*) karakterini asla kullanma, metni düz ve akıcı yaz. "
-                        "Cevapların sonunda kısa bir dua veya güzel bir temenni ile bitir."
-                    )
-                    
-                    full_query = f"{system_instructions}\n\nGEÇMİŞ DİYALOG:\n{gecmis_text}\n\nKAYNAKLAR:\n{baglam}\n\nSORU: {current_prompt}"
-                    
-                    res = client.models.generate_content(model=GUNCEL_MODEL, contents=full_query)
-                    st.markdown(res.text)
-                    st.session_state.messages.append({"role": "assistant", "content": res.text})
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Hata: {e}")
+                system_instructions = (
+                    "Sen bilge, nazik ve öğretici bir muallim olan MUIN'sin. "
+                    "Cevaplarına başlarken her seferinde farklı olacak şekilde; 'Selamünaleyküm kıymetli kardeşim', 'Aziz dostum merhaba' gibi samimi karşılamalar kullan. "
+                    "Soru hangi dildeyse o dilde cevap ver. "
+                    "ÖNEMLİ: Aşağıdaki GEÇMİŞ bölümündeki diyaloğu çok dikkatli incele. Eğer kullanıcı 'peki ya şu?', 'o ne demek?' gibi takip soruları soruyorsa, "
+                    "bir önceki cevabına ve kullanıcının niyetine sadık kalarak konuyu devam ettir. "
+                    "Öğretici, şefkatli ve derinlemesine bilgi veren bir üslup kullan. "
+                    "\n\nKAYNAK KURALI: Sadece ve sadece belgelerde bilgi varsa (📚 Kaynak: Dosya Adı) şeklinde atıf yap. "
+                    "Eğer bilgi belgelerde yoksa kendi bilgini hikmetle anlat. "
+                    "\n\nYıldız (*) karakterini asla kullanma, metni düz ve akıcı yaz. "
+                    "Cevapların sonunda kısa bir dua veya güzel bir temenni ile bitir."
+                )
+                
+                full_query = f"{system_instructions}\n\nGEÇMİŞ DİYALOG:\n{gecmis_text}\n\nKAYNAKLAR:\n{baglam}\n\nSORU: {prompt}"
+                
+                res = client.models.generate_content(model=GUNCEL_MODEL, contents=full_query)
+                
+                # Cevabı ekrana bas ve hafızaya al
+                message_placeholder.markdown(res.text)
+                st.session_state.messages.append({"role": "assistant", "content": res.text})
+                st.rerun()
+                
+            except Exception as e:
+                message_placeholder.markdown(f"❌ Hata: {e}")
