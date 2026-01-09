@@ -90,35 +90,36 @@ st.markdown("""
         background-color: #000000;
     }
 
-    /* Ana metin, paragraflar ve listeleri beyaza zorla */
+    /* Ana metin, paragraflar ve asistan balonlarını beyaza zorla */
     .stApp, p, li, h1, h2, h3, span {
         color: #FFFFFF !important;
     }
 
-    /* Soru Giriş Kutusu - Tam Genişlik ve Sabit */
+    /* Soru Giriş Kutusu (Input Area) - Sabitleme ve Arka Plan */
     [data-testid="stChatInput"] {
-        color: #FFFFFF
         position: fixed;
         bottom: 20px;
         z-index: 10000;
         width: 94% !important;
         left: 3% !important;
+        background-color: #FFFFFF !important; /* Kutu beyaz kalsın */
+        border-radius: 10px;
     }
 
-    /* Giriş kutusunun içindeki yazıyı beyaz yap */
+    /* Giriş kutusunun içindeki YAZI RENGİ - SİYAH */
     [data-testid="stChatInput"] textarea {
-        color: #FFFFFF !important;
-        -webkit-text-fill-color: #FFFFFF !important;
+        color: #000000 !important;
+        -webkit-text-fill-color: #000000 !important; /* iPhone/Android için siyah harf zorlaması */
     }
     
-    /* Sohbet Balonları ve İçerikleri */
+    /* Sohbet Balonları */
     .stChatMessage { 
         border-radius: 15px; 
         background-color: #1A1A1A !important; 
     }
     
-    /* Balon içindeki metinlerin grileşmesini engelle */
-    [data-testid="stChatMessageContent"] {
+    /* Balon içindeki metinler beyaz kalsın */
+    [data-testid="stChatMessageContent"] p {
         color: #FFFFFF !important;
     }
 
@@ -130,8 +131,8 @@ st.markdown("""
         font-size: 13px; 
     }
     
-    /* Kenar çubuğu (Sidebar) metinlerini de beyaz yap */
-    [data-testid="stSidebar"] section[enable_scoped_css="true"] {
+    /* Kenar çubuğu (Sidebar) metinleri */
+    [data-testid="stSidebar"] section {
         color: #FFFFFF !important;
     }
     </style>
