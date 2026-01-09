@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
+import requests
 import os
+from dotenv import load_dotenv
 import json
 import math
 import base64
@@ -9,10 +11,13 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from gtts import gTTS
 
+# .env dosyasını yükle
+load_dotenv()
+
 # ==========================================
 # AYARLAR & API
 # ==========================================
-API_ANAHTARIM = st.secrets["GEMINI_API_KEY"]
+API_ANAHTARIM = os.getenv("GEMINI_API_KEY")
 VERITABANI_YOLU = "./veritabanı"
 POPULER_SORULAR_DOSYASI = "populer_sorular.json"
 GUNCEL_MODEL = "gemini-2.0-flash"
@@ -76,13 +81,18 @@ def metni_seslendir(metin, dil='tr'):
 # ==========================================
 # CSS (EKRAN BÖLME VE GENİŞLETİLMİŞ GİRİŞ)
 # ==========================================
-st.set_page_config(page_title="MUIN", page_icon="🌙", layout="wide")
+st.set_page_config(page_title="MUIN Test Paneli", layout="centered")
 
 st.markdown("""
     <style>
     html, body, [data-testid="stAppViewContainer"] {
         overflow: hidden !important;
         background-color: #000000;
+    }
+
+    /* Ana metin, paragraflar ve listeleri beyaza zorla */
+    .stApp, p, li, h1, h2, h3, span {
+        color: #FFFFFF !important;
     }
 
     /* Soru Giriş Kutusu - Tam Genişlik ve Sabit */
@@ -93,9 +103,36 @@ st.markdown("""
         width: 94% !important;
         left: 3% !important;
     }
+
+    /* Giriş kutusunun içindeki yazıyı beyaz yap */
+    [data-testid="stChatInput"] textarea {
+        color: #FFFFFF !important;
+        -webkit-text-fill-color: #FFFFFF !important;
+    }
     
-    .stChatMessage { border-radius: 15px; background-color: #1A1A1A !important; }
-    .stButton>button { border-radius: 15px; background-color: #1A1A1A; border: 1px solid #444; color: white !important; font-size: 13px; }
+    /* Sohbet Balonları ve İçerikleri */
+    .stChatMessage { 
+        border-radius: 15px; 
+        background-color: #1A1A1A !important; 
+    }
+    
+    /* Balon içindeki metinlerin grileşmesini engelle */
+    [data-testid="stChatMessageContent"] {
+        color: #FFFFFF !important;
+    }
+
+    .stButton>button { 
+        border-radius: 15px; 
+        background-color: #1A1A1A; 
+        border: 1px solid #444; 
+        color: #FFFFFF !important; 
+        font-size: 13px; 
+    }
+    
+    /* Kenar çubuğu (Sidebar) metinlerini de beyaz yap */
+    [data-testid="stSidebar"] section[enable_scoped_css="true"] {
+        color: #FFFFFF !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
