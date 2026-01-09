@@ -163,39 +163,47 @@ with chat_area:
                 st.markdown(metni_seslendir(m["content"]), unsafe_allow_html=True)
 
 # ==========================================
-# 3. BÖLGE: GİRDİ VE ZEKA
+# 3. BÖLGE: GİRDİ VE ZEKA (AKICI ANİMASYON VE STANDARTLAR)
 # ==========================================
 u_input = st.chat_input("Sorunuzu buraya yazın...")
+# STANDART 1: Popüler sorulardan gelmiş mi kontrolü
 prompt = st.session_state.clicked_q if st.session_state.clicked_q else u_input
 st.session_state.clicked_q = None
 
 if prompt:
+    # 1. Kullanıcı mesajını hemen hafızaya ekle
     st.session_state.messages.append({"role": "user", "content": prompt})
     populer_soru_guncelle(prompt, embeddings_model)
-    st.rerun()
-
-if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
-    current_prompt = st.session_state.messages[-1]["content"]
     
+    # 2. Asistanın alanını açıyoruz
     with chat_area:
+        # Önce kullanıcının sorusunu ekranda göster
+        with st.chat_message("user"):
+            st.markdown(prompt)
+            
+        # MUIN'in balonunu açıyoruz
         with st.chat_message("assistant"):
-            status_text = st.empty()
+            status_placeholder = st.empty()
+            
+            # --- ANIMASYON VE ARKA PLAN İŞLEMİ ---
+            # Kullanıcı noktaları izlerken biz arka planda işlemleri başlatıyoruz
             try:
-                # Dinamik Nokta Animasyonu (1-12 arası)
+                # Hafıza ve Bağlam hazırlığı (Bu aşamada 1-12 nokta döngüsü başlıyor)
                 for i in range(1, 13):
-                    status_text.markdown(f"🔍 *MUIN mütalaa ediyor{'.' * i}*")
-                    time.sleep(0.08)
+                    status_placeholder.markdown(f"🔍 *MUIN mütalaa ediyor{'.' * i}*")
+                    time.sleep(0.08) # Noktaların ilerleyiş hızı
 
-                # Hafıza Hazırlığı (Vazgeçilmez Standartlar)
+                # STANDART 2: Hafıza Penceresi (Son 12 mesaj)
                 gecmis = st.session_state.messages[-12:-1]
                 gecmis_text = "\n".join([f"{m['role']}: {m['content']}" for m in gecmis])
 
                 if vector_db:
-                    docs = vector_db.similarity_search(current_prompt, k=6)
+                    docs = vector_db.similarity_search(prompt, k=6)
                     baglam = "\n\n".join([f"📚 Kaynak: {os.path.basename(d.metadata['source'])}\n{d.page_content}" for d in docs])
-                else: baglam = "Belge bulunamadı."
+                else: 
+                    baglam = "Belge bulunamadı."
 
-                # System Instructions (Vazgeçilmez Standartlar)
+                # STANDART 3: Senin İstediğin Tam System Instructions
                 system_instructions = (
                     "Sen bilge, nazik ve öğretici bir muallim olan MUIN'sin. "
                     "Cevaplarına başlarken her seferinde farklı olacak şekilde; 'Selamünaleyküm kıymetli kardeşim', 'Aziz dostum merhaba' gibi samimi karşılamalar kullan. "
@@ -209,17 +217,25 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     "Cevapların sonunda kısa bir dua veya güzel bir temenni ile bitir."
                 )
                 
-                full_query = f"{system_instructions}\n\nGEÇMİŞ DİYALOG:\n{gecmis_text}\n\nKAYNAKLAR:\n{baglam}\n\nSORU: {current_prompt}"
-                
-                # Gemini'den yanıtı al
+                full_query = f"{system_instructions}\n\nGEÇMİŞ DİYALOG:\n{gecmis_text}\n\nKAYNAKLAR:\n{baglam}\n\nSORU: {prompt}"
+
+                # Gemini sorgusu başlarken noktaları 1'e sıfırlayıp tekrar 12'ye kadar döndürelim (Sonsuz hissi)
+                for i in range(1, 13):
+                    status_placeholder.markdown(f"🔍 *MUIN mütalaa ediyor{'.' * i}*")
+                    time.sleep(0.04)
+
+                # Gemini Yanıtı
                 res = client.models.generate_content(model=GUNCEL_MODEL, contents=full_query)
+                full_response = res.text
                 
-                # Animasyonu temizle ve cevabı yaz
-                status_text.empty()
-                st.markdown(res.text)
+                # BİTİŞ: Yazıyı kaldır ve cevabı bas
+                status_placeholder.empty()
+                st.markdown(full_response)
                 
-                # Hafızaya ekle
-                st.session_state.messages.append({"role": "assistant", "content": res.text})
+                # Hafızaya kalıcı olarak ekle
+                st.session_state.messages.append({"role": "assistant", "content": full_response})
+                
+                # Renk atlamasını engellemek için kodun sonuna kadar rerun ÇAĞIRMIYORUZ.
                 
             except Exception as e:
-                status_text.markdown(f"❌ Bir hata oluştu: {e}")
+                status_placeholder.markdown(f"❌ Bir hata oluştu: {e}")
