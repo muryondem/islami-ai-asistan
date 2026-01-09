@@ -8,6 +8,7 @@ import math
 import base64
 import gdown
 import zipfile
+import time  # <--- HATA BURADAYDI, EKLENDİ.
 from google import genai
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import Chroma
@@ -17,7 +18,7 @@ from gtts import gTTS
 load_dotenv()
 
 # ==========================================
-# AYARLAR & API (Değişkenler Önce Tanımlanmalı)
+# AYARLAR & API
 # ==========================================
 API_ANAHTARIM = os.getenv("GEMINI_API_KEY")
 VERITABANI_YOLU = "./veritabanı"
@@ -33,7 +34,7 @@ ZIP_ADI = "veritabani.zip"
 # ==========================================
 def veritabani_hazirla():
     if not os.path.exists(VERITABANI_YOLU) or not os.listdir(VERITABANI_YOLU):
-        st.info("Kütüphane (Veritabanı) Drive'dan hazırlanıyor, lütfen bekleyin...")
+        st.info("Kütüphane Drive'dan hazırlanıyor...")
         url = f'https://drive.google.com/uc?id={DRIVE_DOSYA_ID}'
         try:
             gdown.download(url, ZIP_ADI, quiet=False)
@@ -41,9 +42,8 @@ def veritabani_hazirla():
                 zip_ref.extractall(".")
             if os.path.exists(ZIP_ADI):
                 os.remove(ZIP_ADI)
-            st.success("Veritabanı başarıyla kuruldu.")
         except Exception as e:
-            st.error(f"Veritabanı indirilirken hata oluştu: {e}")
+            st.error(f"Veritabanı hatası: {e}")
 
 veritabani_hazirla()
 
@@ -163,45 +163,39 @@ with chat_area:
                 st.markdown(metni_seslendir(m["content"]), unsafe_allow_html=True)
 
 # ==========================================
-# 3. BÖLGE: GİRDİ VE ZEKA (DİNAMİK NOKTA ANİMASYONLU)
+# 3. BÖLGE: GİRDİ VE ZEKA
 # ==========================================
 u_input = st.chat_input("Sorunuzu buraya yazın...")
-# STANDART 1: Popüler sorulardan gelmiş mi kontrolü
 prompt = st.session_state.clicked_q if st.session_state.clicked_q else u_input
 st.session_state.clicked_q = None
 
 if prompt:
-    # STANDART 2: Kullanıcı mesajını anında hafızaya al ve sayfayı tazele (Soru ekrana gelir)
     st.session_state.messages.append({"role": "user", "content": prompt})
     populer_soru_guncelle(prompt, embeddings_model)
     st.rerun()
 
-# Eğer en son mesaj kullanıcıya aitse MUIN süreci başlasın
 if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
     current_prompt = st.session_state.messages[-1]["content"]
     
     with chat_area:
         with st.chat_message("assistant"):
-            # Donma hissini engelleyen dinamik yazı alanı
             status_text = st.empty()
-            
             try:
-                # ANİMASYON BAŞLANGICI: İlk hazırlık noktaları
+                # Dinamik Nokta Animasyonu (1-12 arası)
                 for i in range(1, 13):
                     status_text.markdown(f"🔍 *MUIN mütalaa ediyor{'.' * i}*")
-                    time.sleep(0.05)
+                    time.sleep(0.08)
 
-                # STANDART 3: Gelişmiş Hafıza Hazırlığı (Son 12 mesaj)
+                # Hafıza Hazırlığı (Vazgeçilmez Standartlar)
                 gecmis = st.session_state.messages[-12:-1]
                 gecmis_text = "\n".join([f"{m['role']}: {m['content']}" for m in gecmis])
 
                 if vector_db:
                     docs = vector_db.similarity_search(current_prompt, k=6)
                     baglam = "\n\n".join([f"📚 Kaynak: {os.path.basename(d.metadata['source'])}\n{d.page_content}" for d in docs])
-                else: 
-                    baglam = "Belge bulunamadı."
+                else: baglam = "Belge bulunamadı."
 
-                # STANDART 4: Senin Memnun Olduğun Tam System Instructions
+                # System Instructions (Vazgeçilmez Standartlar)
                 system_instructions = (
                     "Sen bilge, nazik ve öğretici bir muallim olan MUIN'sin. "
                     "Cevaplarına başlarken her seferinde farklı olacak şekilde; 'Selamünaleyküm kıymetli kardeşim', 'Aziz dostum merhaba' gibi samimi karşılamalar kullan. "
@@ -217,19 +211,15 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                 
                 full_query = f"{system_instructions}\n\nGEÇMİŞ DİYALOG:\n{gecmis_text}\n\nKAYNAKLAR:\n{baglam}\n\nSORU: {current_prompt}"
                 
-                # Gemini sorgusu başlarken noktaları tekrar bir tur döndürelim (Canlılık hissi)
-                status_text.markdown(f"🔍 *MUIN mütalaa ediyor{'.' * 12}*")
-                
                 # Gemini'den yanıtı al
                 res = client.models.generate_content(model=GUNCEL_MODEL, contents=full_query)
-                full_response = res.text
                 
-                # BİTİŞ: Yazıyı kaldır ve bilgece cevabı bas
+                # Animasyonu temizle ve cevabı yaz
                 status_text.empty()
-                st.markdown(full_response)
+                st.markdown(res.text)
                 
-                # Hafızaya kalıcı olarak ekle
-                st.session_state.messages.append({"role": "assistant", "content": full_response})
+                # Hafızaya ekle
+                st.session_state.messages.append({"role": "assistant", "content": res.text})
                 
             except Exception as e:
                 status_text.markdown(f"❌ Bir hata oluştu: {e}")
