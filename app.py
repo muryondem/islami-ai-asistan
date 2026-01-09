@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 import json
 import math
 import base64
+import gdown
+import zipfile
 from google import genai
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import Chroma
@@ -15,13 +17,43 @@ from gtts import gTTS
 load_dotenv()
 
 # ==========================================
-# AYARLAR & API
+# AYARLAR & API (Değişkenler Önce Tanımlanmalı)
 # ==========================================
 API_ANAHTARIM = os.getenv("GEMINI_API_KEY")
 VERITABANI_YOLU = "./veritabanı"
 POPULER_SORULAR_DOSYASI = "populer_sorular.json"
 GUNCEL_MODEL = "gemini-2.0-flash"
 client = genai.Client(api_key=API_ANAHTARIM)
+
+DRIVE_DOSYA_ID = "10fOIQH0dyG0tixnNjtVyEPipTS3EcT9k" 
+ZIP_ADI = "veritabani.zip"
+
+# ==========================================
+# DRIVE'DAN VERİTABANI ÇEKME (OTOMATİK)
+# ==========================================
+def veritabani_hazirla():
+    # Eğer klasör yoksa veya içi boşsa indir
+    if not os.path.exists(VERITABANI_YOLU) or not os.listdir(VERITABANI_YOLU):
+        st.info("Kütüphane (Veritabanı) Drive'dan hazırlanıyor, lütfen bekleyin...")
+        url = f'https://drive.google.com/uc?id={DRIVE_DOSYA_ID}'
+        
+        try:
+            # Drive'dan indir
+            gdown.download(url, ZIP_ADI, quiet=False)
+            
+            # Zip'ten çıkar
+            with zipfile.ZipFile(ZIP_ADI, 'r') as zip_ref:
+                zip_ref.extractall(".")
+            
+            # İndirilen zip dosyasını temizle
+            if os.path.exists(ZIP_ADI):
+                os.remove(ZIP_ADI)
+            st.success("Veritabanı başarıyla kuruldu.")
+        except Exception as e:
+            st.error(f"Veritabanı indirilirken hata oluştu: {e}")
+
+# Fonksiyonu değişken tanımlarından sonra çalıştırıyoruz
+veritabani_hazirla()
 
 # ==========================================
 # FONKSİYONLAR (HAFIZA, KAYIT VE ZEKA)
@@ -79,7 +111,7 @@ def metni_seslendir(metin, dil='tr'):
     except: return ""
 
 # ==========================================
-# CSS (EKRAN BÖLME VE GENİŞLETİLMİŞ GİRİŞ)
+# CSS (EKRAN AYARLARI)
 # ==========================================
 st.set_page_config(page_title="MUIN Test Paneli", layout="centered")
 
@@ -89,57 +121,25 @@ st.markdown("""
         overflow: hidden !important;
         background-color: #000000;
     }
-
-    /* Ana metin, paragraflar ve asistan balonlarını beyaza zorla */
-    .stApp, p, li, h1, h2, h3, span {
-        color: #FFFFFF !important;
-    }
-
-    /* Soru Giriş Kutusu (Input Area) - Sabitleme ve Arka Plan */
+    .stApp, p, li, h1, h2, h3, span { color: #FFFFFF !important; }
     [data-testid="stChatInput"] {
-        position: fixed;
-        bottom: 20px;
-        z-index: 10000;
-        width: 94% !important;
-        left: 3% !important;
-        background-color: #FFFFFF !important; /* Kutu beyaz kalsın */
-        border-radius: 10px;
+        position: fixed; bottom: 20px; z-index: 10000; width: 94% !important; left: 3% !important;
+        background-color: #FFFFFF !important; border-radius: 10px;
     }
-
-    /* Giriş kutusunun içindeki YAZI RENGİ - SİYAH */
     [data-testid="stChatInput"] textarea {
-        color: #000000 !important;
-        -webkit-text-fill-color: #000000 !important; /* iPhone/Android için siyah harf zorlaması */
+        color: #000000 !important; -webkit-text-fill-color: #000000 !important;
     }
-    
-    /* Sohbet Balonları */
-    .stChatMessage { 
-        border-radius: 15px; 
-        background-color: #1A1A1A !important; 
-    }
-    
-    /* Balon içindeki metinler beyaz kalsın */
-    [data-testid="stChatMessageContent"] p {
-        color: #FFFFFF !important;
-    }
-
+    .stChatMessage { border-radius: 15px; background-color: #1A1A1A !important; }
+    [data-testid="stChatMessageContent"] p { color: #FFFFFF !important; }
     .stButton>button { 
-        border-radius: 15px; 
-        background-color: #1A1A1A; 
-        border: 1px solid #444; 
-        color: #FFFFFF !important; 
-        font-size: 13px; 
+        border-radius: 15px; background-color: #1A1A1A; border: 1px solid #444; color: #FFFFFF !important; font-size: 13px; 
     }
-    
-    /* Kenar çubuğu (Sidebar) metinleri */
-    [data-testid="stSidebar"] section {
-        color: #FFFFFF !important;
-    }
+    [data-testid="stSidebar"] section { color: #FFFFFF !important; }
     </style>
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 1. BÖLGE: ÜST (POPLER SORULAR - 10 SORU GÖRÜNÜR)
+# 1. BÖLGE: ÜST (POPÜLER SORULAR)
 # ==========================================
 with st.container():
     st.title("🌙 MUIN")
@@ -148,28 +148,18 @@ with st.container():
 
     if populer_listesi:
         st.markdown("##### 🌟 Popüler Sorular")
-        # İlk 10 soruyu 2 sütunda gösteriyoruz (Alan dinamik büyür)
         ana_sorular = populer_listesi[:10]
         c1, c2 = st.columns(2)
         for i, k in enumerate(ana_sorular):
             with (c1 if i % 2 == 0 else c2):
                 if st.button(f"🔍 {k['soru']}", key=f"top_{i}", use_container_width=True):
                     st.session_state.clicked_q = k['soru']
-        
-        # 10'dan fazla varsa "Daha Fazla" seçeneği
-        if len(populer_listesi) > 10:
-            with st.expander("Daha Fazla Popüler Soru..."):
-                d1, d2 = st.columns(2)
-                for i, k in enumerate(populer_listesi[10:20]):
-                    with (d1 if i % 2 == 0 else d2):
-                        if st.button(f"🔍 {k['soru']}", key=f"extra_{i}", use_container_width=True):
-                            st.session_state.clicked_q = k['soru']
     st.divider()
 
 # ==========================================
 # 2. BÖLGE: ALT (KAYDIRILABİLİR CHAT)
 # ==========================================
-chat_area = st.container(height=480) # Bağımsız kaydırma alanı
+chat_area = st.container(height=480)
 
 if "messages" not in st.session_state: st.session_state.messages = []
 
@@ -193,15 +183,13 @@ if prompt:
 
 if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
     current_prompt = st.session_state.messages[-1]["content"]
-    
-    # Soru kaydediliyor
     populer_soru_guncelle(current_prompt, embeddings_model)
     
     with chat_area:
         with st.chat_message("assistant"):
             with st.spinner("MUIN mütalaa ediyor..."):
                 try:
-                    # HAFIZA GÜNCELLEMESİ: Son 12 mesajı alarak daha derin bir bağlam sağlıyoruz
+                    # HAFIZA: Senin istediğin gibi son 12 mesaj
                     gecmis = st.session_state.messages[-12:-1]
                     gecmis_text = "\n".join([f"{m['role']}: {m['content']}" for m in gecmis])
 
@@ -210,7 +198,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                         baglam = "\n\n".join([f"📚 Kaynak: {os.path.basename(d.metadata['source'])}\n{d.page_content}" for d in docs])
                     else: baglam = "Belge bulunamadı."
 
-                    # TAM VE EKSİKSİZ PROMPT (GÜÇLENDİRİLMİŞ HAFIZA TALİMATI İLE)
+                    # SENİN MEMNUN OLDUĞUN TAM SYSTEM INSTRUCTIONS
                     system_instructions = (
                         "Sen bilge, nazik ve öğretici bir muallim olan MUIN'sin. "
                         "Cevaplarına başlarken her seferinde farklı olacak şekilde; 'Selamünaleyküm kıymetli kardeşim', 'Aziz dostum merhaba' gibi samimi karşılamalar kullan. "
