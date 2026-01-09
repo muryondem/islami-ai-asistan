@@ -201,7 +201,8 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
         with st.chat_message("assistant"):
             with st.spinner("MUIN mütalaa ediyor..."):
                 try:
-                    gecmis = st.session_state.messages[-6:-1]
+                    # HAFIZA GÜNCELLEMESİ: Son 12 mesajı alarak daha derin bir bağlam sağlıyoruz
+                    gecmis = st.session_state.messages[-12:-1]
                     gecmis_text = "\n".join([f"{m['role']}: {m['content']}" for m in gecmis])
 
                     if vector_db:
@@ -209,19 +210,21 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                         baglam = "\n\n".join([f"📚 Kaynak: {os.path.basename(d.metadata['source'])}\n{d.page_content}" for d in docs])
                     else: baglam = "Belge bulunamadı."
 
-                    # TAM VE EKSİKSİZ PROMPT (SENİN VERDİĞİN METİN)
+                    # TAM VE EKSİKSİZ PROMPT (GÜÇLENDİRİLMİŞ HAFIZA TALİMATI İLE)
                     system_instructions = (
                         "Sen bilge, nazik ve öğretici bir muallim olan MUIN'sin. "
                         "Cevaplarına başlarken her seferinde farklı olacak şekilde; 'Selamünaleyküm kıymetli kardeşim', 'Aziz dostum merhaba' gibi samimi karşılamalar kullan. "
-                        "Soru hangi dildeyse o dilde cevap ver. Diyalog geçmişini hatırla. "
+                        "Soru hangi dildeyse o dilde cevap ver. "
+                        "ÖNEMLİ: Aşağıdaki GEÇMİŞ bölümündeki diyaloğu çok dikkatli incele. Eğer kullanıcı 'peki ya şu?', 'o ne demek?' gibi takip soruları soruyorsa, "
+                        "bir önceki cevabına ve kullanıcının niyetine sadık kalarak konuyu devam ettir. "
                         "Öğretici, şefkatli ve derinlemesine bilgi veren bir üslup kullan. "
                         "\n\nKAYNAK KURALI: Sadece ve sadece belgelerde bilgi varsa (📚 Kaynak: Dosya Adı) şeklinde atıf yap. "
-                        "Eğer bilgi belgelerde yoksa 'Kaynak yok' veya 'Belgelerde bulamadım' gibi bir ifade asla kullanma, doğrudan kendi bilgini hikmetle anlat. "
+                        "Eğer bilgi belgelerde yoksa kendi bilgini hikmetle anlat. "
                         "\n\nYıldız (*) karakterini asla kullanma, metni düz ve akıcı yaz. "
                         "Cevapların sonunda kısa bir dua veya güzel bir temenni ile bitir."
                     )
                     
-                    full_query = f"{system_instructions}\n\nGEÇMİŞ:\n{gecmis_text}\n\nKAYNAKLAR:\n{baglam}\n\nSORU: {current_prompt}"
+                    full_query = f"{system_instructions}\n\nGEÇMİŞ DİYALOG:\n{gecmis_text}\n\nKAYNAKLAR:\n{baglam}\n\nSORU: {current_prompt}"
                     
                     res = client.models.generate_content(model=GUNCEL_MODEL, contents=full_query)
                     st.markdown(res.text)
