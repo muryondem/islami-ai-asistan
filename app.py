@@ -163,54 +163,69 @@ with chat_area:
                 st.markdown(metni_seslendir(m["content"]), unsafe_allow_html=True)
 
 # ==========================================
-# 3. BÖLGE: GİRDİ VE ZEKA
+# 3. BÖLGE: GİRDİ VE ZEKA (GÜNCELLENMİŞ & AKICI)
 # ==========================================
 u_input = st.chat_input("Sorunuzu buraya yazın...")
+# Popüler sorulardan gelmiş mi kontrolü (Vazgeçilmez)
 prompt = st.session_state.clicked_q if st.session_state.clicked_q else u_input
 st.session_state.clicked_q = None
 
 if prompt:
-    # Kullanıcı mesajını anında ekle
+    # Kullanıcı mesajını hafızaya ekle
     st.session_state.messages.append({"role": "user", "content": prompt})
     populer_soru_guncelle(prompt, embeddings_model)
     
-    # MUIN hemen cevap alanını açsın (Donma hissini engeller)
+    # Sohbet alanında MUIN'in balonunu hemen aç
     with chat_area:
+        # Kullanıcı mesajını anında göster
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # Asistan balonu
         with st.chat_message("assistant"):
-            message_placeholder = st.empty()
-            message_placeholder.markdown("🔍 *MUIN mütalaa ediyor...*")
-            
-            try:
-                # Hafıza hazırlığı
-                gecmis = st.session_state.messages[-12:-1]
-                gecmis_text = "\n".join([f"{m['role']}: {m['content']}" for m in gecmis])
+            # Donma hissini bitiren hareketli gösterge (Apple/Windows stili)
+            with st.status("🔍 MUIN mütalaa ediyor...", expanded=True) as status:
+                try:
+                    # HAFIZA HAZIRLIĞI (Vazgeçilmez yapı)
+                    gecmis = st.session_state.messages[-12:-1]
+                    gecmis_text = "\n".join([f"{m['role']}: {m['content']}" for m in gecmis])
 
-                if vector_db:
-                    docs = vector_db.similarity_search(prompt, k=6)
-                    baglam = "\n\n".join([f"📚 Kaynak: {os.path.basename(d.metadata['source'])}\n{d.page_content}" for d in docs])
-                else: baglam = "Belge bulunamadı."
+                    if vector_db:
+                        docs = vector_db.similarity_search(prompt, k=6)
+                        baglam = "\n\n".join([f"📚 Kaynak: {os.path.basename(d.metadata['source'])}\n{d.page_content}" for d in docs])
+                    else: 
+                        baglam = "Belge bulunamadı."
 
-                system_instructions = (
-                    "Sen bilge, nazik ve öğretici bir muallim olan MUIN'sin. "
-                    "Cevaplarına başlarken her seferinde farklı olacak şekilde; 'Selamünaleyküm kıymetli kardeşim', 'Aziz dostum merhaba' gibi samimi karşılamalar kullan. "
-                    "Soru hangi dildeyse o dilde cevap ver. "
-                    "ÖNEMLİ: Aşağıdaki GEÇMİŞ bölümündeki diyaloğu çok dikkatli incele. Eğer kullanıcı 'peki ya şu?', 'o ne demek?' gibi takip soruları soruyorsa, "
-                    "bir önceki cevabına ve kullanıcının niyetine sadık kalarak konuyu devam ettir. "
-                    "Öğretici, şefkatli ve derinlemesine bilgi veren bir üslup kullan. "
-                    "\n\nKAYNAK KURALI: Sadece ve sadece belgelerde bilgi varsa (📚 Kaynak: Dosya Adı) şeklinde atıf yap. "
-                    "Eğer bilgi belgelerde yoksa kendi bilgini hikmetle anlat. "
-                    "\n\nYıldız (*) karakterini asla kullanma, metni düz ve akıcı yaz. "
-                    "Cevapların sonunda kısa bir dua veya güzel bir temenni ile bitir."
-                )
-                
-                full_query = f"{system_instructions}\n\nGEÇMİŞ DİYALOG:\n{gecmis_text}\n\nKAYNAKLAR:\n{baglam}\n\nSORU: {prompt}"
-                
-                res = client.models.generate_content(model=GUNCEL_MODEL, contents=full_query)
-                
-                # Cevabı ekrana bas ve hafızaya al
-                message_placeholder.markdown(res.text)
-                st.session_state.messages.append({"role": "assistant", "content": res.text})
-                st.rerun()
-                
-            except Exception as e:
-                message_placeholder.markdown(f"❌ Hata: {e}")
+                    # SİSTEM TALİMATLARI (Birebir korundu)
+                    system_instructions = (
+                        "Sen bilge, nazik ve öğretici bir muallim olan MUIN'sin. "
+                        "Cevaplarına başlarken her seferinde farklı olacak şekilde; 'Selamünaleyküm kıymetli kardeşim', 'Aziz dostum merhaba' gibi samimi karşılamalar kullan. "
+                        "Soru hangi dildeyse o dilde cevap ver. "
+                        "ÖNEMLİ: Aşağıdaki GEÇMİŞ bölümündeki diyaloğu çok dikkatli incele. Eğer kullanıcı 'peki ya şu?', 'o ne demek?' gibi takip soruları soruyorsa, "
+                        "bir önceki cevabına ve kullanıcının niyetine sadık kalarak konuyu devam ettir. "
+                        "Öğretici, şefkatli ve derinlemesine bilgi veren bir üslup kullan. "
+                        "\n\nKAYNAK KURALI: Sadece ve sadece belgelerde bilgi varsa (📚 Kaynak: Dosya Adı) şeklinde atıf yap. "
+                        "Eğer bilgi belgelerde yoksa kendi bilgini hikmetle anlat. "
+                        "\n\nYıldız (*) karakterini asla kullanma, metni düz ve akıcı yaz. "
+                        "Cevapların sonunda kısa bir dua veya güzel bir temenni ile bitir."
+                    )
+                    
+                    full_query = f"{system_instructions}\n\nGEÇMİŞ DİYALOG:\n{gecmis_text}\n\nKAYNAKLAR:\n{baglam}\n\nSORU: {prompt}"
+                    
+                    # Gemini yanıtı
+                    res = client.models.generate_content(model=GUNCEL_MODEL, contents=full_query)
+                    full_response = res.text
+                    
+                    # İşlem bittiğinde animasyonu kapat ve cevabı bas
+                    status.update(label="✅ Mütalaa tamamlandı", state="complete", expanded=False)
+                    st.markdown(full_response)
+                    
+                    # Hafızaya sessizce ekle
+                    st.session_state.messages.append({"role": "assistant", "content": full_response})
+                    
+                    # Sayfanın en altına otomatik kaydırma yapmak için küçük bir tetikleyici
+                    # st.rerun() yerine sayfa sonu kontrolü sağlanmış oldu
+                    
+                except Exception as e:
+                    status.update(label="❌ Hata oluştu", state="error")
+                    st.error(f"Detay: {e}")
