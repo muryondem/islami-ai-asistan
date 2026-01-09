@@ -1,92 +1,74 @@
 # -*- coding: utf-8 -*-
 import os
 import time
+from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import Chroma
 
-KAYNAK_ANA_DIZIN = "./kaynaklar"
+load_dotenv()
+API_ANAHTARIM = os.getenv("GEMINI_API_KEY")
+
+KAYNAK_ANA_DIZIN = "/Users/alem/Desktop/DiniAsistan/Kaynaklar"
 VERITABANI_YOLU = "./veritabani"
 
-def hafiza_olustur():
-    # 1. API Anahtarını hazırla
-    api_key = os.getenv("GOOGLE_API_KEY")
-    print(f"DEBUG: Anahtar bulundu mu?: {api_key is not None}")
+def metadata_olustur(tam_yol):
+    bagil_yol = os.path.relpath(tam_yol, KAYNAK_ANA_DIZIN)
+    parcalar = bagil_yol.split(os.sep)
+    meta = {"din": "Genel", "ana_mezhep": "Genel", "kategori": "Genel", "alt_mezhep": "Genel"}
     
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key)
+    if len(parcalar) >= 1: meta["din"] = parcalar[0]
+    if len(parcalar) >= 2: meta["ana_mezhep"] = parcalar[1]
+    if len(parcalar) >= 3: meta["kategori"] = parcalar[2]
+    if len(parcalar) >= 4: meta["alt_mezhep"] = parcalar[3]
     
-    # 2. Mevcut Veritabanını yükle
-    vector_db = Chroma(
-        persist_directory=VERITABANI_YOLU,
-        embedding_function=embeddings
-    )
+    for key in meta:
+        meta[key] = meta[key].replace("_", " ").capitalize()
+    return meta
 
-    # 3. Zaten işlenmiş dosyaları listele
+def hafiza_olustur():
+    if not API_ANAHTARIM:
+        print("❌ HATA: GEMINI_API_KEY bulunamadı!")
+        return
+
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=API_ANAHTARIM)
+    vector_db = Chroma(persist_directory=VERITABANI_YOLU, embedding_function=embeddings)
+
     existing_data = vector_db.get()
-    processed_files = set()
-    if existing_data['metadatas']:
-        for m in existing_data['metadatas']:
-            if 'source' in m:
-                processed_files.add(os.path.basename(m['source']))
+    processed_files = {os.path.basename(m['source']) for m in existing_data['metadatas'] if 'source' in m}
 
     new_documents = []
-    
-    # 4. Kaynak klasörlerini tara
-    for kategori in ["meal", "tefsir", "hadis"]:
-        yol = os.path.join(KAYNAK_ANA_DIZIN, kategori)
-        if not os.path.exists(yol): continue
-        
-        for dosya in os.listdir(yol):
-            if dosya.endswith(".pdf"):
-                if dosya in processed_files:
-                    print(f"Atlanıyor (Zaten Hafızada): {dosya}")
-                    continue
-                
-                print(f"YENİ DOSYA İşleniyor: {dosya}")
+    for root, dirs, files in os.walk(KAYNAK_ANA_DIZIN):
+        for dosya in files:
+            if dosya.endswith(".pdf") and dosya not in processed_files:
+                tam_yol = os.path.join(root, dosya)
+                meta = metadata_olustur(tam_yol)
                 try:
-                    loader = PyPDFLoader(os.path.join(yol, dosya))
+                    loader = PyPDFLoader(tam_yol)
                     docs = loader.load()
                     for d in docs:
-                        d.metadata["kategori"] = kategori
+                        d.metadata.update(meta)
                     new_documents.extend(docs)
+                    print(f"📄 İşlendi: {dosya}")
                 except Exception as e:
-                    print(f"HATA: {dosya} okunurken sorun çıktı: {e}")
+                    print(f"⚠️ Hata: {dosya} -> {e}")
 
-    # 5. Yeni dosyaları küçük paketler halinde ve bekleyerek ekle
     if new_documents:
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         parcalar = text_splitter.split_documents(new_documents)
-        
-        total_parts = len(parcalar)
-        print(f"Toplam {total_parts} parça 50'şerli paketler halinde ekleniyor...")
-        
-        batch_size = 50 
-        for i in range(0, total_parts, batch_size):
+        batch_size = 200
+        for i in range(0, len(parcalar), batch_size):
             batch = parcalar[i:i + batch_size]
-            print(f"İşleniyor: {i} - {min(i + batch_size, total_parts)} / {total_parts}")
-            
-            basarili = False
-            deneme = 0
-            while not basarili and deneme < 5:
-                try:
-                    vector_db.add_documents(documents=batch)
-                    basarili = True
-                    # Her paketten sonra 10 saniye mola (Kota koruması)
-                    time.sleep(10) 
-                except Exception as e:
-                    deneme += 1
-                    if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                        bekleme_suresi = 65 * deneme
-                        print(f"Kota doldu, {bekleme_suresi} saniye mola veriliyor (Deneme {deneme})...")
-                        time.sleep(bekleme_suresi)
-                    else:
-                        print(f"Hata oluştu: {e}")
-                        break
-        
-        print("Hafıza başarıyla güncellendi!")
+            try:
+                vector_db.add_documents(documents=batch)
+                print(f"✅ Paket: {i+len(batch)}/{len(parcalar)}")
+            except Exception:
+                time.sleep(30)
+                vector_db.add_documents(documents=batch)
+        print("✨ Hafıza güncellendi!")
     else:
-        print("Yeni dosya yok, hafıza zaten güncel.")
+        print("✔ Yeni döküman yok.")
 
 if __name__ == "__main__":
     hafiza_olustur()
