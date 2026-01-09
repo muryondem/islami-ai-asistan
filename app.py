@@ -97,6 +97,7 @@ st.markdown("""
 
     /* Soru Giriş Kutusu - Tam Genişlik ve Sabit */
     [data-testid="stChatInput"] {
+        color: #FFFFFF
         position: fixed;
         bottom: 20px;
         z-index: 10000;
