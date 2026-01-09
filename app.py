@@ -163,69 +163,73 @@ with chat_area:
                 st.markdown(metni_seslendir(m["content"]), unsafe_allow_html=True)
 
 # ==========================================
-# 3. BÖLGE: GİRDİ VE ZEKA (KESİN ÇÖZÜM)
+# 3. BÖLGE: GİRDİ VE ZEKA (DİNAMİK NOKTA ANİMASYONLU)
 # ==========================================
 u_input = st.chat_input("Sorunuzu buraya yazın...")
+# STANDART 1: Popüler sorulardan gelmiş mi kontrolü
 prompt = st.session_state.clicked_q if st.session_state.clicked_q else u_input
 st.session_state.clicked_q = None
 
 if prompt:
-    # 1. Kullanıcı mesajını hemen ekle
+    # STANDART 2: Kullanıcı mesajını anında hafızaya al ve sayfayı tazele (Soru ekrana gelir)
     st.session_state.messages.append({"role": "user", "content": prompt})
     populer_soru_guncelle(prompt, embeddings_model)
-    
-    # Sayfayı bir kez yenileyelim ki kullanıcının sorusu hemen ekranda görünsün
     st.rerun()
 
-# Eğer en son mesaj kullanıcıya aitse MUIN cevap versin
+# Eğer en son mesaj kullanıcıya aitse MUIN süreci başlasın
 if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
     current_prompt = st.session_state.messages[-1]["content"]
     
     with chat_area:
         with st.chat_message("assistant"):
-            # Donma hissini bitiren yer tutucu ve animasyon
-            message_placeholder = st.empty()
-            with st.status("🔍 MUIN mütalaa ediyor...", expanded=True) as status:
-                try:
-                    # HAFIZA VE BAĞLAM (Senin vazgeçilmez yapıların)
-                    gecmis = st.session_state.messages[-12:-1]
-                    gecmis_text = "\n".join([f"{m['role']}: {m['content']}" for m in gecmis])
+            # Donma hissini engelleyen dinamik yazı alanı
+            status_text = st.empty()
+            
+            try:
+                # ANİMASYON BAŞLANGICI: İlk hazırlık noktaları
+                for i in range(1, 13):
+                    status_text.markdown(f"🔍 *MUIN mütalaa ediyor{'.' * i}*")
+                    time.sleep(0.05)
 
-                    if vector_db:
-                        docs = vector_db.similarity_search(current_prompt, k=6)
-                        baglam = "\n\n".join([f"📚 Kaynak: {os.path.basename(d.metadata['source'])}\n{d.page_content}" for d in docs])
-                    else: 
-                        baglam = "Belge bulunamadı."
+                # STANDART 3: Gelişmiş Hafıza Hazırlığı (Son 12 mesaj)
+                gecmis = st.session_state.messages[-12:-1]
+                gecmis_text = "\n".join([f"{m['role']}: {m['content']}" for m in gecmis])
 
-                    system_instructions = (
-                        "Sen bilge, nazik ve öğretici bir muallim olan MUIN'sin. "
-                        "Cevaplarına başlarken her seferinde farklı olacak şekilde; 'Selamünaleyküm kıymetli kardeşim', 'Aziz dostum merhaba' gibi samimi karşılamalar kullan. "
-                        "Soru hangi dildeyse o dilde cevap ver. "
-                        "ÖNEMLİ: Aşağıdaki GEÇMİŞ bölümündeki diyaloğu çok dikkatli incele. Eğer kullanıcı 'peki ya şu?', 'o ne demek?' gibi takip soruları soruyorsa, "
-                        "bir önceki cevabına ve kullanıcının niyetine sadık kalarak konuyu devam ettir. "
-                        "Öğretici, şefkatli ve derinlemesine bilgi veren bir üslup kullan. "
-                        "\n\nKAYNAK KURALI: Sadece ve sadece belgelerde bilgi varsa (📚 Kaynak: Dosya Adı) şeklinde atıf yap. "
-                        "Eğer bilgi belgelerde yoksa kendi bilgini hikmetle anlat. "
-                        "\n\nYıldız (*) karakterini asla kullanma, metni düz ve akıcı yaz. "
-                        "Cevapların sonunda kısa bir dua veya güzel bir temenni ile bitir."
-                    )
-                    
-                    full_query = f"{system_instructions}\n\nGEÇMİŞ DİYALOG:\n{gecmis_text}\n\nKAYNAKLAR:\n{baglam}\n\nSORU: {current_prompt}"
-                    
-                    # Gemini'den yanıtı al
-                    res = client.models.generate_content(model=GUNCEL_MODEL, contents=full_query)
-                    full_response = res.text
-                    
-                    # 2. İşlem bittiğinde animasyonu kapat ve cevabı YER TUTUCUYA yaz
-                    status.update(label="✅ Mütalaa tamamlandı", state="complete", expanded=False)
-                    message_placeholder.markdown(full_response)
-                    
-                    # 3. Cevabı kalıcı hafızaya ekle
-                    st.session_state.messages.append({"role": "assistant", "content": full_response})
-                    
-                    # Ses butonu veya diğer UI öğelerinin güncellenmesi için sessiz bir rerun gerekebilir 
-                    # ama önce bu haliyle bir push edip sonucu görelim.
-                    
-                except Exception as e:
-                    status.update(label="❌ Hata oluştu", state="error")
-                    st.error(f"Detay: {e}")
+                if vector_db:
+                    docs = vector_db.similarity_search(current_prompt, k=6)
+                    baglam = "\n\n".join([f"📚 Kaynak: {os.path.basename(d.metadata['source'])}\n{d.page_content}" for d in docs])
+                else: 
+                    baglam = "Belge bulunamadı."
+
+                # STANDART 4: Senin Memnun Olduğun Tam System Instructions
+                system_instructions = (
+                    "Sen bilge, nazik ve öğretici bir muallim olan MUIN'sin. "
+                    "Cevaplarına başlarken her seferinde farklı olacak şekilde; 'Selamünaleyküm kıymetli kardeşim', 'Aziz dostum merhaba' gibi samimi karşılamalar kullan. "
+                    "Soru hangi dildeyse o dilde cevap ver. "
+                    "ÖNEMLİ: Aşağıdaki GEÇMİŞ bölümündeki diyaloğu çok dikkatli incele. Eğer kullanıcı 'peki ya şu?', 'o ne demek?' gibi takip soruları soruyorsa, "
+                    "bir önceki cevabına ve kullanıcının niyetine sadık kalarak konuyu devam ettir. "
+                    "Öğretici, şefkatli ve derinlemesine bilgi veren bir üslup kullan. "
+                    "\n\nKAYNAK KURALI: Sadece ve sadece belgelerde bilgi varsa (📚 Kaynak: Dosya Adı) şeklinde atıf yap. "
+                    "Eğer bilgi belgelerde yoksa kendi bilgini hikmetle anlat. "
+                    "\n\nYıldız (*) karakterini asla kullanma, metni düz ve akıcı yaz. "
+                    "Cevapların sonunda kısa bir dua veya güzel bir temenni ile bitir."
+                )
+                
+                full_query = f"{system_instructions}\n\nGEÇMİŞ DİYALOG:\n{gecmis_text}\n\nKAYNAKLAR:\n{baglam}\n\nSORU: {current_prompt}"
+                
+                # Gemini sorgusu başlarken noktaları tekrar bir tur döndürelim (Canlılık hissi)
+                status_text.markdown(f"🔍 *MUIN mütalaa ediyor{'.' * 12}*")
+                
+                # Gemini'den yanıtı al
+                res = client.models.generate_content(model=GUNCEL_MODEL, contents=full_query)
+                full_response = res.text
+                
+                # BİTİŞ: Yazıyı kaldır ve bilgece cevabı bas
+                status_text.empty()
+                st.markdown(full_response)
+                
+                # Hafızaya kalıcı olarak ekle
+                st.session_state.messages.append({"role": "assistant", "content": full_response})
+                
+            except Exception as e:
+                status_text.markdown(f"❌ Bir hata oluştu: {e}")
