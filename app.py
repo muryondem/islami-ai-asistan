@@ -163,40 +163,40 @@ with chat_area:
                 st.markdown(metni_seslendir(m["content"]), unsafe_allow_html=True)
 
 # ==========================================
-# 3. BÖLGE: GİRDİ VE ZEKA (GÜNCELLENMİŞ & AKICI)
+# 3. BÖLGE: GİRDİ VE ZEKA (KESİN ÇÖZÜM)
 # ==========================================
 u_input = st.chat_input("Sorunuzu buraya yazın...")
-# Popüler sorulardan gelmiş mi kontrolü (Vazgeçilmez)
 prompt = st.session_state.clicked_q if st.session_state.clicked_q else u_input
 st.session_state.clicked_q = None
 
 if prompt:
-    # Kullanıcı mesajını hafızaya ekle
+    # 1. Kullanıcı mesajını hemen ekle
     st.session_state.messages.append({"role": "user", "content": prompt})
     populer_soru_guncelle(prompt, embeddings_model)
     
-    # Sohbet alanında MUIN'in balonunu hemen aç
-    with chat_area:
-        # Kullanıcı mesajını anında göster
-        with st.chat_message("user"):
-            st.markdown(prompt)
+    # Sayfayı bir kez yenileyelim ki kullanıcının sorusu hemen ekranda görünsün
+    st.rerun()
 
-        # Asistan balonu
+# Eğer en son mesaj kullanıcıya aitse MUIN cevap versin
+if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
+    current_prompt = st.session_state.messages[-1]["content"]
+    
+    with chat_area:
         with st.chat_message("assistant"):
-            # Donma hissini bitiren hareketli gösterge (Apple/Windows stili)
+            # Donma hissini bitiren yer tutucu ve animasyon
+            message_placeholder = st.empty()
             with st.status("🔍 MUIN mütalaa ediyor...", expanded=True) as status:
                 try:
-                    # HAFIZA HAZIRLIĞI (Vazgeçilmez yapı)
+                    # HAFIZA VE BAĞLAM (Senin vazgeçilmez yapıların)
                     gecmis = st.session_state.messages[-12:-1]
                     gecmis_text = "\n".join([f"{m['role']}: {m['content']}" for m in gecmis])
 
                     if vector_db:
-                        docs = vector_db.similarity_search(prompt, k=6)
+                        docs = vector_db.similarity_search(current_prompt, k=6)
                         baglam = "\n\n".join([f"📚 Kaynak: {os.path.basename(d.metadata['source'])}\n{d.page_content}" for d in docs])
                     else: 
                         baglam = "Belge bulunamadı."
 
-                    # SİSTEM TALİMATLARI (Birebir korundu)
                     system_instructions = (
                         "Sen bilge, nazik ve öğretici bir muallim olan MUIN'sin. "
                         "Cevaplarına başlarken her seferinde farklı olacak şekilde; 'Selamünaleyküm kıymetli kardeşim', 'Aziz dostum merhaba' gibi samimi karşılamalar kullan. "
@@ -210,21 +210,21 @@ if prompt:
                         "Cevapların sonunda kısa bir dua veya güzel bir temenni ile bitir."
                     )
                     
-                    full_query = f"{system_instructions}\n\nGEÇMİŞ DİYALOG:\n{gecmis_text}\n\nKAYNAKLAR:\n{baglam}\n\nSORU: {prompt}"
+                    full_query = f"{system_instructions}\n\nGEÇMİŞ DİYALOG:\n{gecmis_text}\n\nKAYNAKLAR:\n{baglam}\n\nSORU: {current_prompt}"
                     
-                    # Gemini yanıtı
+                    # Gemini'den yanıtı al
                     res = client.models.generate_content(model=GUNCEL_MODEL, contents=full_query)
                     full_response = res.text
                     
-                    # İşlem bittiğinde animasyonu kapat ve cevabı bas
+                    # 2. İşlem bittiğinde animasyonu kapat ve cevabı YER TUTUCUYA yaz
                     status.update(label="✅ Mütalaa tamamlandı", state="complete", expanded=False)
-                    st.markdown(full_response)
+                    message_placeholder.markdown(full_response)
                     
-                    # Hafızaya sessizce ekle
+                    # 3. Cevabı kalıcı hafızaya ekle
                     st.session_state.messages.append({"role": "assistant", "content": full_response})
                     
-                    # Sayfanın en altına otomatik kaydırma yapmak için küçük bir tetikleyici
-                    # st.rerun() yerine sayfa sonu kontrolü sağlanmış oldu
+                    # Ses butonu veya diğer UI öğelerinin güncellenmesi için sessiz bir rerun gerekebilir 
+                    # ama önce bu haliyle bir push edip sonucu görelim.
                     
                 except Exception as e:
                     status.update(label="❌ Hata oluştu", state="error")
